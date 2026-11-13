@@ -18,6 +18,7 @@ from pyLIBS import (
     _voigt_fit_range_key,
     _voigt_integral_to_baseline,
     _voigt_quality_assessment,
+    _voigt_prepare_components,
     _voigt_saved_fit_range,
     _session_voigt_saved_fit_range,
     measurement_spectrum_signature,
@@ -29,6 +30,146 @@ from pyLIBS import (
 
 
 class VoigtAutoFitTests(unittest.TestCase):
+    def test_voigt_initialization_prefers_nearest_assigned_peak(self):
+        x = np.linspace(99.5, 100.5, 2001)
+        y = multivoigt_model(
+            x,
+            1.0e-5,
+            0.0,
+            5.0e-3,
+            99.80,
+            0.012,
+            0.007,
+            5.0e-4,
+            100.10,
+            0.012,
+            0.007,
+        )
+        components, nuisance_count = _voigt_prepare_components(
+            [{
+                "key": 1,
+                "wavelen": 100.10,
+                "asswavelen": 100.0,
+                "fitwavelen": 0.0,
+                "wg": 0.0,
+                "wl": 0.0,
+                "specie": "X",
+                "ion": 1,
+            }],
+            {},
+            x,
+            y,
+            0.5,
+            float(x[1] - x[0]),
+        )
+
+        self.assertEqual(nuisance_count, 1)
+        self.assertAlmostEqual(components[0]["_center0"], 100.10, delta=0.002)
+        self.assertAlmostEqual(components[0]["_nist_center"], 100.0)
+
+    def test_isolated_marked_slope_is_rejected_before_voigt_optimization(self):
+        x = np.linspace(99.5, 100.5, 101)
+        y = 1.0 + 0.2 * (x - 100.0)
+        snapshot = {
+            "spectrum": {"x": x.tolist(), "y": y.tolist(), "name": "slope"},
+            "xlim": (99.5, 100.5),
+            "ylim": (float(np.min(y)), float(np.max(y))),
+            "line_overrides": {},
+            "lines": [{
+                "key": 1,
+                "wavelen": 100.12,
+                "asswavelen": 100.0,
+                "fitwavelen": 0.0,
+                "wg": 0.0,
+                "wl": 0.0,
+                "specie": "Pb",
+                "ion": 1,
+            }],
+            "options": {
+                "voigt_baseline_mode": "local_linear",
+                "fixed_wg": 0.1,
+                "fixed_wl": 0.1,
+                "fix_wg": False,
+                "fix_wl": False,
+                "fix_wavelength": False,
+                "iterations": 20,
+            },
+        }
+        runner = object.__new__(RetroFitManagerWindow)
+        runner.last_fit_result = None
+
+        result = runner._run_voigt_fit_snapshot(snapshot, lambda: False)
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("No resolvable measured maximum", result["message"])
+        self.assertIn("+0.12 nm", result["message"])
+
+    def test_automatic_snapshot_crops_unselected_dominant_neighbor(self):
+        x = np.linspace(99.5, 100.5, 2001)
+        y = multivoigt_model(
+            x,
+            1.0e-5,
+            0.0,
+            5.0e-3,
+            99.70,
+            0.012,
+            0.007,
+            5.0e-4,
+            100.20,
+            0.012,
+            0.007,
+        )
+        line = TemplateLine(
+            wavelen=100.20,
+            asswavelen=100.0,
+            specie="X",
+            ion=1,
+        )
+        runner = object.__new__(RetroFitManagerWindow)
+        runner.automatic = True
+        runner.master_app = SimpleNamespace(
+            current_plot_view=lambda: ((99.5, 100.5), (0.0, float(np.max(y)))),
+            options=SimpleNamespace(
+                voigt_baseline_mode="local_linear",
+                voigt_fit_ranges="{}",
+                voigt_fit_range_sources="{}",
+                fixed_wg=0.1,
+                fixed_wl=0.1,
+                fix_wg=False,
+                fix_wl=False,
+                fix_wavelength=False,
+                search_range=1.0,
+                delta_min=0.5,
+                iterations=20,
+                quality_max_replicate_area_cv=0.25,
+            ),
+            session_voigt_fit_range_keys=set(),
+        )
+        runner._active_spectrum_snapshot = lambda _lines: {
+            "x": x.tolist(),
+            "y": y.tolist(),
+            "name": "synthetic",
+            "replicates": [],
+        }
+
+        snapshot = runner._build_voigt_fit_snapshot(
+            [line],
+            line_overrides={id(line): {
+                "center": 100.20,
+                "fix_center": False,
+                "wg": 0.1,
+                "wl": 0.1,
+                "fix_wg": False,
+                "fix_wl": False,
+            }},
+        )
+
+        self.assertLess(snapshot["xlim"][0], 100.20)
+        self.assertGreater(snapshot["xlim"][1], 100.20)
+        self.assertGreater(snapshot["xlim"][0], 99.70)
+        self.assertLess(snapshot["xlim"][1] - snapshot["xlim"][0], 0.3)
+        self.assertFalse(snapshot["options"]["_allow_residual_nuisance"])
+
     def test_palleschi_gaussian_area_matches_the_analytical_integral(self):
         amplitude = 7.5
         sigma = 0.08

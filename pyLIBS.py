@@ -6378,13 +6378,14 @@ def _voigt_prepare_components(
         )
         if fixed:
             fixed_keys.add(line.get("key"))
+        line["_fixed_center"] = fixed
 
     assignments = {}
     available = set(range(len(candidates)))
     possible = sorted(
         (
-            -candidate["prominence"],
             abs(candidate["x"] - target),
+            -candidate["prominence"],
             line.get("key"),
             candidate_index,
         )
@@ -6395,7 +6396,7 @@ def _voigt_prepare_components(
         if abs(candidate["x"] - target) <= half_window
     )
     assigned_keys = set()
-    for _negative_prominence, _distance, key, candidate_index in possible:
+    for _distance, _negative_prominence, key, candidate_index in possible:
         if key in assigned_keys or candidate_index not in available:
             continue
         assignments[key] = candidate_index
@@ -6418,6 +6419,9 @@ def _voigt_prepare_components(
         # legitimate shifted peak can start at the old NIST-centered boundary
         # and be rejected without the optimizer ever being able to cross it.
         line["_target_center"] = target
+        line["_nist_center"] = abs(
+            safe_float(line.get("asswavelen"), 0.0)
+        ) or abs(safe_float(line.get("wavelen"), 0.0))
         # Allow the optimizer to move across the complete interval connecting
         # the theoretical line and the detected maximum. A shoulder can hide
         # the true Voigt center from scipy.find_peaks; bounding only around the
@@ -17594,6 +17598,10 @@ class RetroFitManagerWindow(tk.Toplevel):
             {
                 "key": id(t),
                 "wavelen": safe_float(getattr(t, "wavelen", 0.0), 0.0),
+                "asswavelen": safe_float(
+                    getattr(t, "asswavelen", 0.0),
+                    0.0,
+                ),
                 "fitwavelen": safe_float(getattr(t, "fitwavelen", 0.0), 0.0),
                 "wg": safe_float(getattr(t, "wg", 0.0), 0.0),
                 "wl": safe_float(getattr(t, "wl", 0.0), 0.0),
@@ -17607,15 +17615,19 @@ class RetroFitManagerWindow(tk.Toplevel):
             and not saved_fit_range
             and spectrum
         ):
-            measured_limits = _voigt_expanded_baseline_limits(
-                spectrum.get("x") or [],
-                spectrum.get("y") or [],
+            broad_lo, broad_hi = sorted(xlim)
+            broad_pairs = [
+                (float(x), float(y))
+                for x, y in zip(
+                    spectrum.get("x") or [],
+                    spectrum.get("y") or [],
+                )
+                if broad_lo <= float(x) <= broad_hi
+            ]
+            measured_limits = _voigt_baseline_reaching_limits(
+                [x for x, _y in broad_pairs],
+                [y for _x, y in broad_pairs],
                 line_records,
-                xlim,
-                search_range=max(
-                    abs(safe_float(getattr(opts, "search_range", 0.1), 0.1)),
-                    abs(safe_float(getattr(opts, "delta_min", 0.5), 0.5)),
-                ),
                 line_overrides=overrides,
             )
             if measured_limits is not None:
@@ -17646,9 +17658,11 @@ class RetroFitManagerWindow(tk.Toplevel):
                     getattr(opts, "quality_max_replicate_area_cv", 0.25),
                     0.25,
                 ),
-                "_allow_residual_nuisance": bool(
-                    getattr(self, "automatic", False)
-                ),
+                # Quantitative fits contain only peaks explicitly selected by
+                # the user. A large unselected neighbour must narrow the local
+                # ROI or make the line fail quality control; it must not become
+                # a hidden fit component.
+                "_allow_residual_nuisance": False,
             },
             "max_nfev": max_nfev,
             "initial_free": list(initial_free) if initial_free is not None else None,
@@ -18129,6 +18143,53 @@ class RetroFitManagerWindow(tk.Toplevel):
                 for line in fit_lines
                 if bool(line.get("_nuisance", False))
             )
+        unresolved_selected = [
+            line
+            for line in fit_lines[:len(selected_lines)]
+            if not bool(line.get("_observed_candidate", False))
+            and not bool(line.get("_fixed_center", False))
+        ]
+        if len(selected_lines) == 1 and unresolved_selected:
+            line = unresolved_selected[0]
+            selected_center = safe_float(
+                line.get("_target_center"),
+                line.get("wavelen", math.nan),
+            )
+            nist_center = safe_float(
+                line.get("_nist_center"),
+                line.get("asswavelen", 0.0),
+            )
+            species = str(line.get("specie", "") or "").strip()
+            ion = safe_int(line.get("ion", 0), 0)
+            label = " ".join(
+                part
+                for part in (
+                    species,
+                    _roman_ion(ion) if ion > 0 else "",
+                    f"{nist_center:.6g} nm" if nist_center > 0.0 else "",
+                )
+                if part
+            ) or "selected line"
+            shift_text = ""
+            if nist_center > 0.0 and math.isfinite(selected_center):
+                shift_text = (
+                    f" The assigned center is {selected_center:.6g} nm "
+                    f"(observed-NIST shift {selected_center - nist_center:+.6g} nm)."
+                )
+            return {
+                "status": "error",
+                "message": (
+                    f"No resolvable measured maximum was found for {label} "
+                    "inside the fitted interval. The marked point lies on a "
+                    "slope or unresolved background, so a quantitative Voigt "
+                    f"area is not identifiable.{shift_text} Check wavelength "
+                    "calibration or exclude this line."
+                ),
+                "payload": None,
+                "best_free": None,
+                "initial_free": None,
+                "max_nfev": snapshot.get("max_nfev"),
+            }
         min_points = _voigt_free_parameter_count(
             fit_lines,
             options=options,
@@ -18535,6 +18596,27 @@ class RetroFitManagerWindow(tk.Toplevel):
                     fixed_center=bool(options.get("fix_wavelength", False)),
                 )
             )
+            nist_center = safe_float(component.get("_nist_center"), 0.0)
+            observed_center = safe_float(component.get("_target_center"), 0.0)
+            assignment_shift = observed_center - nist_center
+            shift_warning_limit = max(2.0 * abs(dx), 1.0e-9)
+            item["assignment_shift"] = assignment_shift
+            if (
+                nist_center > 0.0
+                and abs(assignment_shift) > shift_warning_limit
+            ):
+                warning = (
+                    f"observed-NIST shift {assignment_shift:+.6g} nm; "
+                    "verify wavelength calibration"
+                )
+                existing_warning = str(item.get("quality_warning", "") or "")
+                item["quality_warning"] = "; ".join(
+                    value for value in (existing_warning, warning) if value
+                )
+                existing_message = str(item.get("quality_message", "") or "")
+                item["quality_message"] = "; ".join(
+                    value for value in (existing_message, warning) if value
+                )
         boundary_hits = [
             item
             for item in payload.get("fit_values", [])
@@ -19601,7 +19683,11 @@ class RetroFitManagerWindow(tk.Toplevel):
             elif not ok:
                 current_lines = fit_lines or self._visible_template_lines()
                 self._mark_fit_error(current_lines)
-                self.msg_var.set(f"Automatic Fit: ERROR marked for {len(current_lines)} line(s)")
+                detail = str((fit_result or {}).get("message", "") or "").strip()
+                self.msg_var.set(
+                    f"Automatic Fit: ERROR marked for {len(current_lines)} line(s)"
+                    + (f"; {detail}" if detail else "")
+                )
             self._auto_maxfev_retry_count = 0
             self.progress["value"] = self._manual_visible_progress()
             if not self._move_manual_region("next", preserve_user_values=True):

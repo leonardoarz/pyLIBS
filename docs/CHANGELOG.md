@@ -54,6 +54,7 @@ https://doi.org/10.1155/2014/849310
 
 ### Fixed
 
+- Automatic Voigt fitting now starts from the measured maximum nearest the assigned line, crops unsaved fit regions to the two local baseline returns, and rejects isolated markers that do not correspond to a resolvable measured maximum. This prevents long, meaningless fits of sloping background or a stronger neighbouring feature and reports the observed-NIST shift for calibration review.
 - `Trace Lines > Assign` now retains measured peaks from every element traced in sequence, rather than assigning only the last search. The Auto Fit selection also rejects unmatched theoretical transitions instead of presenting them as observed peaks.
 - `Clear Graph` now removes stale fitted lines and Saha-Boltzmann state while preserving the persistent analytical-line library for the next measurement.
 - Global wavelength shifts and saved calibration profiles are now applied consistently during peak identification without changing the assigned NIST transition wavelength.
