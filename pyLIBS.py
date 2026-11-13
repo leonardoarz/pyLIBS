@@ -19646,6 +19646,7 @@ class RetroFitManagerWindow(tk.Toplevel):
             return
         self.manual_fit_stop = False
         self.fit_stop_requested = False
+        self._automatic_fit_errors = []
         self.msg_var.set("Starting Automatic Fit....")
         if not self.manual_fit_lines:
             group, indices = self._build_manual_fit_group_from_anchor(sorted_rows, 0, "next")
@@ -19679,11 +19680,18 @@ class RetroFitManagerWindow(tk.Toplevel):
                     return
                 current_lines = fit_lines or self._visible_template_lines()
                 self._mark_fit_error(current_lines)
+                detail = str((fit_result or {}).get("message", "") or "").strip()
+                self._automatic_fit_errors.append(
+                    detail or "maximum number of function evaluations reached"
+                )
                 self.msg_var.set(f"Automatic Fit: ERROR marked for {len(current_lines)} line(s)")
             elif not ok:
                 current_lines = fit_lines or self._visible_template_lines()
                 self._mark_fit_error(current_lines)
                 detail = str((fit_result or {}).get("message", "") or "").strip()
+                self._automatic_fit_errors.append(
+                    detail or "fit failed without a diagnostic message"
+                )
                 self.msg_var.set(
                     f"Automatic Fit: ERROR marked for {len(current_lines)} line(s)"
                     + (f"; {detail}" if detail else "")
@@ -19692,7 +19700,17 @@ class RetroFitManagerWindow(tk.Toplevel):
             self.progress["value"] = self._manual_visible_progress()
             if not self._move_manual_region("next", preserve_user_values=True):
                 self.progress["value"] = 100
-                self.msg_var.set("Automatic Fit completed.")
+                fit_errors = list(
+                    getattr(self, "_automatic_fit_errors", []) or []
+                )
+                completion_message = (
+                    f"Automatic Fit completed with {len(fit_errors)} rejected "
+                    "line group(s)."
+                    if fit_errors
+                    else "Automatic Fit completed."
+                )
+                self.msg_var.set(completion_message)
+                self.master_app.status(completion_message)
                 payload = (fit_result or {}).get("payload") or {}
                 display_xlim = payload.get("display_xlim")
                 if display_xlim and getattr(self.master_app, "ax", None):
@@ -19700,7 +19718,19 @@ class RetroFitManagerWindow(tk.Toplevel):
                     self.master_app.full_y_main_visible_x()
                     self.master_app.canvas.draw_idle()
                     self.master_app._update_xscroll()
-                _showinfo(self, "Automatic Fit", "Automatic Fit completed.")
+                if fit_errors:
+                    details = "\n".join(
+                        f"- {message}" for message in fit_errors[:8]
+                    )
+                    if len(fit_errors) > 8:
+                        details += f"\n- ... and {len(fit_errors) - 8} more"
+                    _showwarning(
+                        self,
+                        "Automatic Fit",
+                        f"{completion_message}\n\n{details}",
+                    )
+                else:
+                    _showinfo(self, "Automatic Fit", completion_message)
                 return
             self.after(0, lambda: self._start_visible_fit_async(
                 "Automatic Fit",
