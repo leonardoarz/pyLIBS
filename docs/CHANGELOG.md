@@ -54,6 +54,7 @@ https://doi.org/10.1155/2014/849310
 
 ### Fixed
 
+- `Trace Lines > Assign` now retains measured peaks from every element traced in sequence, rather than assigning only the last search. The Auto Fit selection also rejects unmatched theoretical transitions instead of presenting them as observed peaks.
 - `Clear Graph` now removes stale fitted lines and Saha-Boltzmann state while preserving the persistent analytical-line library for the next measurement.
 - Global wavelength shifts and saved calibration profiles are now applied consistently during peak identification without changing the assigned NIST transition wavelength.
 - Historical IRSAC selections are migrated to the single visible IRSAC2 workflow, and Aki filtering is shared consistently by its line adapter.

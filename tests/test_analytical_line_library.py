@@ -8,6 +8,7 @@ from pyLIBS import (
     AtomicLine,
     AppOptions,
     MainWindow,
+    TraceLinesWindow,
     Spectrum,
     TemplateLine,
     acquired_wavelength_intervals,
@@ -316,6 +317,97 @@ class AnalyticalLineLibraryTests(unittest.TestCase):
         self.assertEqual(app.analysis_elements, {"Cd"})
         self.assertEqual(app.last_trace_fit_ready_count, 1)
         self.assertEqual(fit_window.refreshes, 1)
+
+    def test_trace_assign_uses_all_accumulated_elements(self):
+        nickel = AtomicLine(349.296, "Ni", 1)
+        cadmium = AtomicLine(340.365, "Cd", 1)
+        nickel._trace_peak_match = {
+            "wavelength": 349.31,
+            "intensity": 10.0,
+        }
+        cadmium._trace_peak_match = {
+            "wavelength": 340.38,
+            "intensity": 12.0,
+        }
+
+        class Variable:
+            def __init__(self):
+                self.value = ""
+
+            def set(self, value):
+                self.value = value
+
+        calls = []
+        app = SimpleNamespace(
+            trace_markers=[nickel, cadmium],
+            last_trace_fit_ready_count=2,
+            current_wavelength_unit_label=lambda: "nm",
+            status=lambda message: None,
+        )
+
+        def assign(markers, *, peak_matches, tolerance):
+            calls.append((list(markers), dict(peak_matches), tolerance))
+            return len(markers)
+
+        app.assign_traced_lines = assign
+        window = SimpleNamespace(
+            master_app=app,
+            last_query_lines=[cadmium],
+            last_peak_matches={id(cadmium): cadmium._trace_peak_match},
+            last_tolerance=0.10,
+            info_var=Variable(),
+            refresh=lambda: None,
+        )
+
+        TraceLinesWindow.assign(window)
+
+        self.assertEqual(calls[0][0], [nickel, cadmium])
+        self.assertEqual(set(calls[0][1]), {id(nickel), id(cadmium)})
+        self.assertIn("2 measured transition(s) selected", window.info_var.value)
+
+    def test_trace_assign_rejects_transition_without_measured_peak(self):
+        spectrum = Spectrum(
+            [340.20, 340.25, 340.30, 340.35, 340.40],
+            [1.0, 1.0, 1.0, 1.0, 1.0],
+        )
+        atomic = AtomicLine(340.365, "Cd", 1, aki=1.0)
+        template = TemplateLine(340.365)
+
+        class Database:
+            @staticmethod
+            def enrich_line_from_element_table(line, **_kwargs):
+                return line
+
+        app = SimpleNamespace(
+            spectra=[spectrum],
+            independent_window_mode=False,
+            active_window=None,
+            template_lines=[template],
+            trace_markers=[atomic],
+            options=SimpleNamespace(search_range=0.10),
+            libs_db=Database(),
+            wavelength_unit="nm",
+            analysis_elements=set(),
+        )
+        app.copy_atomic_line_to_template_line = (
+            lambda target, line: MainWindow.copy_atomic_line_to_template_line(
+                app, target, line
+            )
+        )
+        app.notify_template_changed = lambda redraw=False: None
+        app.redraw = lambda preserve_view=False: None
+        app.status = lambda _message: None
+
+        assigned = MainWindow.assign_traced_lines(
+            app,
+            [atomic],
+            tolerance=0.10,
+        )
+
+        self.assertEqual(assigned, 0)
+        self.assertFalse(getattr(template, "trace_selected", False))
+        self.assertEqual(app.analysis_elements, set())
+        self.assertEqual(app.last_trace_fit_ready_count, 0)
 
     def test_trace_lines_can_use_only_the_persistent_main_list(self):
         library = [

@@ -3153,12 +3153,34 @@ class TraceLinesWindow(tk.Toplevel):
                 )
             ]
         for l in lines:
-            if not any(abs(t.wavelen-l.wavelen) < 1e-6 and t.specie == l.specie and t.ion == l.ion for t in existing):
-                existing.append(l)
+            match = peak_matches.get(id(l))
+            duplicate = next(
+                (
+                    marker
+                    for marker in existing
+                    if abs(marker.wavelen - l.wavelen) < 1e-6
+                    and marker.specie == l.specie
+                    and marker.ion == l.ion
+                ),
+                None,
+            )
+            marker = duplicate if duplicate is not None else l
+            if duplicate is None:
+                existing.append(marker)
+            # Trace calls accumulate several elements before Assign. Keep the
+            # measured maximum with its database marker so a later search does
+            # not discard the earlier element's fit selection.
+            if match is not None:
+                marker._trace_peak_match = dict(match)
+            marker._trace_tolerance = float(tolerance)
         existing.sort(key=lambda x: x.wavelen)
         self.master_app.trace_markers = existing
-        self.last_query_lines = list(lines)
-        self.last_peak_matches = dict(peak_matches)
+        self.last_query_lines = list(existing)
+        self.last_peak_matches = {
+            id(marker): dict(marker._trace_peak_match)
+            for marker in existing
+            if isinstance(getattr(marker, "_trace_peak_match", None), dict)
+        }
         self.last_tolerance = float(tolerance)
         if lines:
             selected = getattr(self.master_app, "analysis_elements", None)
@@ -3214,9 +3236,18 @@ class TraceLinesWindow(tk.Toplevel):
         self.master_app.status(self.info_var.get())
 
     def assign(self):
+        # Assign every species accumulated in the Trace Lines table. The
+        # historical pyLIBS workflow explicitly allows Ni, Cd, Pb, ... to be
+        # traced in sequence and assigned with one click.
+        trace_markers = list(getattr(self.master_app, "trace_markers", []) or [])
+        peak_matches = {
+            id(marker): dict(marker._trace_peak_match)
+            for marker in trace_markers
+            if isinstance(getattr(marker, "_trace_peak_match", None), dict)
+        }
         n = self.master_app.assign_traced_lines(
-            self.last_query_lines,
-            peak_matches=self.last_peak_matches,
+            trace_markers,
+            peak_matches=peak_matches,
             tolerance=self.last_tolerance,
         )
         self.refresh()
@@ -3224,11 +3255,21 @@ class TraceLinesWindow(tk.Toplevel):
             getattr(self.master_app, "last_trace_fit_ready_count", 0),
             0,
         )
-        self.info_var.set(
-            f"Assign: {n} transition(s) identified; {fit_ready} measured "
-            f"peak(s) ready for Auto Fit within +/-{self.last_tolerance:g} "
-            f"{self.master_app.current_wavelength_unit_label()}."
-        )
+        if fit_ready:
+            message = (
+                f"Assign: {n} measured transition(s) selected; {fit_ready} "
+                f"peak(s) ready for Auto Fit within +/-{self.last_tolerance:g} "
+                f"{self.master_app.current_wavelength_unit_label()}."
+            )
+        else:
+            message = (
+                "Assign: no measured maximum matched the traced transitions. "
+                "Check the wavelength calibration or increase the Trace Lines "
+                f"tolerance (currently +/-{self.last_tolerance:g} "
+                f"{self.master_app.current_wavelength_unit_label()})."
+            )
+        self.info_var.set(message)
+        self.master_app.status(message)
 
     def _on_tree_double_click(self, event=None):
         item = self.tree.identify_row(event.y) if event else self.tree.focus()
@@ -21300,8 +21341,10 @@ class MainWindow(tk.Tk):
         assigned = 0
         fit_ready = 0
         assigned_marker_ids = set()
+        assigned_species = set()
         for t in self.template_lines:
             observed_wavelength = template_line_plot_wavelength(t)
+            already_observed = template_line_is_observed_selection(t)
             if observed_wavelength <= 0.0:
                 continue
             selected_species = str(
@@ -21328,7 +21371,6 @@ class MainWindow(tk.Tk):
                 candidates,
                 key=lambda line: abs(line.wavelen - observed_wavelength),
             )
-            assigned_marker_ids.add(id(marker))
             atomic = marker
             try:
                 atomic = self.libs_db.enrich_line_from_element_table(
@@ -21345,16 +21387,37 @@ class MainWindow(tk.Tk):
                     marker.wavelen,
                     rg,
                 )
-            if match is not None:
-                observed = safe_float(match.get("wavelength"), math.nan)
-                if math.isfinite(observed):
-                    _clear_template_fit_measurements([t])
-                    t.wavelen = float(observed)
-                    t.templint = float(match.get("intensity", 0.0) or 0.0)
-                    t.trace_selected = True
-                    fit_ready += 1
+            if match is None:
+                # A manually selected or previously fitted measured row may be
+                # identified after the peak selection step. Preserve that
+                # valid observation and attach only the atomic metadata.
+                if not already_observed:
+                    continue
+                assigned_marker_ids.add(id(marker))
+                t.trace_selected = True
+                self.copy_atomic_line_to_template_line(t, atomic)
+                assigned += 1
+                fit_ready += 1
+                species = str(
+                    getattr(atomic, "specie", "") or ""
+                ).strip().capitalize()
+                if species:
+                    assigned_species.add(species)
+                continue
+            observed = safe_float(match.get("wavelength"), math.nan)
+            if not math.isfinite(observed):
+                continue
+            assigned_marker_ids.add(id(marker))
+            _clear_template_fit_measurements([t])
+            t.wavelen = float(observed)
+            t.templint = float(match.get("intensity", 0.0) or 0.0)
+            t.trace_selected = True
             self.copy_atomic_line_to_template_line(t, atomic)
             assigned += 1
+            fit_ready += 1
+            species = str(getattr(atomic, "specie", "") or "").strip().capitalize()
+            if species:
+                assigned_species.add(species)
         proposals = []
         for marker in trace_markers:
             if id(marker) in assigned_marker_ids:
@@ -21413,11 +21476,11 @@ class MainWindow(tk.Tk):
             assigned += 1
             created += 1
             fit_ready += 1
-        selected = set(getattr(self, "analysis_elements", set()) or set())
-        for marker in trace_markers:
-            species = str(getattr(marker, "specie", "") or "").strip().capitalize()
+            species = str(getattr(atomic, "specie", "") or "").strip().capitalize()
             if species:
-                selected.add(species)
+                assigned_species.add(species)
+        selected = set(getattr(self, "analysis_elements", set()) or set())
+        selected.update(assigned_species)
         self.analysis_elements = selected
         self.last_trace_fit_ready_count = fit_ready
         self.notify_template_changed(redraw=False)
