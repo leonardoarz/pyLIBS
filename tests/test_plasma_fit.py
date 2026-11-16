@@ -5,6 +5,8 @@ import statistics
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tests import _synthetic_data as S  # noqa: E402
@@ -16,6 +18,8 @@ except ImportError:
     HAS_SCIPY = False
 
 from pylibs.core.plasma_fit import SBPoint, stark_boltzmann_loop  # noqa: E402
+from pylibs.core import dev_adapters  # noqa: E402
+from pylibs.gui.selfconsistent_dialog import SelfConsistentWindow  # noqa: E402
 
 
 def sb_points(noise=0.0, seed=1, only_neutral=False):
@@ -62,6 +66,55 @@ class TestLoop(unittest.TestCase):
         self.assertTrue(ok)
         self.assertAlmostEqual(steps[-1].kt, 0.9, places=4)
         self.assertAlmostEqual(steps[-1].ne / 5e16, 1.0, places=4)
+
+
+class TestHalphaAdapter(unittest.TestCase):
+    def test_uses_explicit_angstrom_width_and_application_state(self):
+        app = SimpleNamespace(last_halpha_result={
+            "available": True,
+            "corrected_lorentzian_width": 0.22301,
+            "corrected_lorentzian_width_angstrom": 2.2301,
+        })
+        api = SimpleNamespace(libspp_halpha_ne=Mock(return_value=(3.076e17, 11455.0, 0.1)))
+        with patch.object(dev_adapters, "_app_api", return_value=api):
+            result = dev_adapters.halpha_ne(app, 0.9875)
+        self.assertEqual(result[0], 3.076e17)
+        api.libspp_halpha_ne.assert_called_once_with(2.2301, 0.9875)
+
+    def test_does_not_treat_display_unit_width_as_angstrom(self):
+        app = SimpleNamespace(last_halpha_result={
+            "available": True,
+            "corrected_lorentzian_width": 0.22301,
+        })
+        self.assertIsNone(dev_adapters.halpha_ne(app, 0.9875))
+
+    def test_dialog_passes_application_to_adapter_and_validates_result(self):
+        app = SimpleNamespace()
+        backend = SimpleNamespace(halpha_ne=Mock(return_value=(3.076e17, 11455.0, 0.1)))
+        window = object.__new__(SelfConsistentWindow)
+        window.master_app = app
+        window.backend = backend
+        self.assertEqual(window._stark_ne(0.9875), 3.076e17)
+        backend.halpha_ne.assert_called_once_with(app, 0.9875)
+
+    def test_dialog_displays_the_explicit_angstrom_width(self):
+        result = {
+            "available": True,
+            "corrected_lorentzian_width": 0.22301,
+            "corrected_lorentzian_width_angstrom": 2.2301,
+        }
+        window = object.__new__(SelfConsistentWindow)
+        window.master_app = SimpleNamespace(last_halpha_result=result)
+        width, stored = window._halpha_width()
+        self.assertEqual(width, 2.2301)
+        self.assertIs(stored, result)
+
+    def test_dialog_reports_missing_stark_result_without_indexing_none(self):
+        window = object.__new__(SelfConsistentWindow)
+        window.master_app = SimpleNamespace()
+        window.backend = SimpleNamespace(halpha_ne=Mock(return_value=None))
+        with self.assertRaisesRegex(ValueError, "Recalculate Ne from H-alpha"):
+            window._stark_ne(0.9875)
 
 
 if __name__ == "__main__":

@@ -202,8 +202,14 @@ def mean_kt(app, ne, kt0, elements=None):
 
 
 def halpha_ne(app, kt):
+    """Evaluate Ne at *kt* from the stored H-alpha width in Angstrom.
+
+    H-alpha fit results also contain a width in the wavelength unit currently
+    displayed by the application.  The Stark relation, however, requires
+    Angstrom, so only the explicit Angstrom field is accepted here.
+    """
     result = getattr(app, "last_halpha_result", None) or {}
-    width = safe_float(result.get("corrected_width", result.get("width", 0.0)), 0.0)
+    width = safe_float(result.get("corrected_lorentzian_width_angstrom"), 0.0)
     if width <= 0:
         return None
     return _app_api().libspp_halpha_ne(width, kt)

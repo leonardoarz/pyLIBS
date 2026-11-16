@@ -89,9 +89,26 @@ class SelfConsistentWindow(tk.Toplevel):
     # ------------------------------------------------------------------
     def _halpha_width(self):
         res = getattr(self.master_app, "last_halpha_result", None) or {}
-        if res.get("available") and (res.get("corrected_lorentzian_width") or 0) > 0:
-            return float(res["corrected_lorentzian_width"]), res
+        width = res.get("corrected_lorentzian_width_angstrom")
+        if res.get("available") and (width or 0) > 0:
+            return float(width), res
         return None, res
+
+    def _stark_ne(self, kt):
+        """Return a validated Stark density for the stored H-alpha width."""
+        result = self.backend.halpha_ne(self.master_app, kt)
+        if result is None:
+            raise ValueError(
+                "The stored H-alpha Stark width is unavailable or invalid. "
+                "Recalculate Ne from H-alpha, then run the T-Ne iteration again."
+            )
+        try:
+            ne = float(result[0])
+        except (TypeError, ValueError, IndexError) as exc:
+            raise ValueError("The H-alpha Stark calculation returned an invalid electron density.") from exc
+        if not math.isfinite(ne) or ne <= 0.0:
+            raise ValueError("The H-alpha Stark calculation returned a non-positive electron density.")
+        return ne
 
     def _elements(self):
         sw = getattr(self.master_app, "saha_window", None)
@@ -140,12 +157,12 @@ class SelfConsistentWindow(tk.Toplevel):
                 raise ValueError("No valid Saha-Boltzmann points: fit the template lines first.")
             width, _res = self._halpha_width()
             use_stark = bool(width) and self.use_stark.get()
-            ne_from_kt = (lambda kt: self.backend.halpha_ne(width, kt)[0]) if use_stark else None
+            ne_from_kt = self._stark_ne if use_stark else None
             kt_from_ne = lambda ne, kt: self.backend.mean_kt(app, ne, kt, elements)  # noqa: E731
             steps, converged = stark_boltzmann_loop(kt0, ne0, ne_from_kt, kt_from_ne, tol, maxit)
             p1 = steps[-1]
             fit = global_fit(points, p1.kt, p1.ne, fit_ne=True)
-            ne_stark_fit = self.backend.halpha_ne(width, fit.kt)[0] if width else None
+            ne_stark_fit = self._stark_ne(fit.kt) if width else None
         except Exception as e:  # noqa: BLE001
             self.status_var.set(str(e))
             _showerror(self, "T–Ne fit", str(e))
