@@ -2711,12 +2711,12 @@ def remove_traced_elements(app, elements) -> tuple[int, int]:
 
 
 def clear_current_line_analysis(app: "MainWindow") -> tuple[int, int]:
-    """Remove sample-specific line results while preserving the main library.
+    """Remove sample-specific results and reload the saved default line set.
 
-    The analytical library is a reusable catalogue. ``template_lines`` is the
-    measurement workspace and may contain fitted areas, manual peaks and rows
-    created from the complete database. Rebuild that workspace from clean
-    library clones so cleared fits cannot re-enter Saha-Boltzmann.
+    The saved set is only a reusable preset. ``template_lines`` is the single
+    user-facing measurement workspace and may contain fitted areas, manual
+    peaks and rows created from the complete database. Rebuild that workspace
+    from clean preset clones so cleared fits cannot re-enter Saha-Boltzmann.
     """
     previous_count = len(list(getattr(app, "template_lines", []) or []))
     clean_lines = _clone_template_lines(
@@ -2783,7 +2783,7 @@ class TraceLinesWindow(tk.Toplevel):
     species shown in the dialog.
     """
     columns = ("wavelen", "specie", "ion", "inte", "ei", "ek", "gi", "gk", "aki", "acc")
-    SOURCE_LIBRARY = "Main analytical list"
+    SOURCE_LIBRARY = "Current analysis lines"
     SOURCE_DATABASE = "Complete element database"
 
     def __init__(self, master):
@@ -2824,7 +2824,8 @@ class TraceLinesWindow(tk.Toplevel):
             self,
             "Trace Lines",
             (
-                "Choose 'Main analytical list' to use only the persistent curated list, or 'Complete element "
+                "Choose 'Current analysis lines' to search only the lines already present in the analysis table, "
+                "or 'Complete element "
                 "database' to use every transition stored for that element across all acquired detector windows.\n\n"
                 "By default, either source is restricted to transitions for which a real measured local maximum is found. "
                 "Peak significance is evaluated against the noise of the complete detector window; untouched rows "
@@ -2835,9 +2836,9 @@ class TraceLinesWindow(tk.Toplevel):
                 "the requested tolerance by a small residual calibration offset, it may use a 50% recovery margin "
                 "only when the observed peak is prominent in its detector window. "
                 "Disable 'Only lines with a measured peak' to browse every theoretical line from the chosen source.\n\n"
-                "Assign adds the matched measured maxima to the analytical-line list, so they can be fitted and integrated."
+                "Assign adds the matched measured maxima to the analysis-line table, so they can be fitted and integrated."
                 " 'Clear analysis' removes the current assignments, fitted areas and derived Saha/IRSAC/CF-LIBS "
-                "state, then restores a clean copy of the persistent main line library."
+                "state, then reloads a clean copy of the saved default line set."
             ),
         ).grid(row=0, column=13, padx=(8, 3))
         self.selected_only_var = tk.BooleanVar(value=True)
@@ -2959,7 +2960,7 @@ class TraceLinesWindow(tk.Toplevel):
             )
             if source == self.SOURCE_LIBRARY:
                 lines = trace_lines_from_analytical_library(
-                    getattr(self.master_app, "analytical_line_library", []) or [],
+                    getattr(self.master_app, "template_lines", []) or [],
                     element,
                     ions,
                     lo,
@@ -3328,7 +3329,7 @@ class TraceLinesWindow(tk.Toplevel):
         self.master_app.redraw(preserve_view=True)
         self.info_var.set(
             f"Analysis cleared: {previous_count} sample line(s) removed; "
-            f"main library restored with {library_count} clean line(s)."
+            f"saved default set restored with {library_count} clean line(s)."
         )
         self.master_app.status(self.info_var.get())
 
@@ -4915,7 +4916,7 @@ class WavelengthCalibrationWindow(tk.Toplevel):
             "Wavelength calibration",
             (
                 "Calibrate before identification and Auto Fit. Load or paste NIST wavelengths; "
-                "they are also added to the selected-line list.\n\n"
+                "they are also added to the Analysis Lines table.\n\n"
                 "The program locates measured maxima, refines their centers with a Voigt profile when SciPy "
                 "is available, and calibrates each detector window independently. In Auto mode, one or two "
                 "lines produce an offset; a linear scale requires at least three coherent lines spanning 5 nm."
@@ -9272,7 +9273,7 @@ class SahaLineDiagnosticsWindow(tk.Toplevel):
         self.summary_var = tk.StringVar()
         ttk.Label(top, textvariable=self.summary_var).pack(side="left", fill="x", expand=True)
         ttk.Button(top, text="Refresh", command=self.refresh).pack(side="right")
-        ttk.Button(top, text="Selected Lines", command=self.open_selected_lines).pack(side="right", padx=4)
+        ttk.Button(top, text="Analysis Lines", command=self.open_selected_lines).pack(side="right", padx=4)
         ttk.Button(top, text="Auto Fit (Voigt)", command=self.open_auto_fit).pack(side="right")
 
         frame = ttk.Frame(self)
@@ -9693,7 +9694,7 @@ def saha_no_fit_message(diagnostics: list[dict], groups: dict) -> str:
     usable = len(usable_rows)
     if total == 0:
         return (
-            "No selected lines are available. Create or load the selected-line list, "
+            "No analysis lines are available. Create or load the Analysis Lines table, "
             "identify the lines, then run the Voigt Auto Fit."
         )
 
@@ -16162,7 +16163,7 @@ class RetroTemplateManager(tk.Toplevel):
         super().__init__(master)
         self.master_app = master
         self._hide_template_pending = False
-        self.title("Selected analytical lines")
+        self.title("Analysis lines")
         try:
             self.transient(master)
         except Exception:
@@ -16220,6 +16221,31 @@ class RetroTemplateManager(tk.Toplevel):
         ttk.Button(panel, text="Clear fit", command=self.clear_fit).pack(side="left", padx=2)
         ttk.Button(panel, text="Delete row", command=self.delete_selected_row).pack(side="left", padx=2)
         ttk.Button(panel, text="Saha-Boltzmann", command=self.master_app.show_saha_boltzmann).pack(side="left", padx=2)
+        default_button = ttk.Menubutton(panel, text="Default line set")
+        default_menu = tk.Menu(default_button, tearoff=0)
+        default_menu.add_command(
+            label="Load saved default set",
+            command=self.master_app.reload_analytical_line_library,
+        )
+        default_menu.add_command(
+            label="Add lines to default set...",
+            command=self.master_app.add_secondary_analytical_line_list,
+        )
+        default_menu.add_command(
+            label="Replace default line set...",
+            command=self.master_app.replace_analytical_line_library,
+        )
+        default_menu.add_command(
+            label="Save current selection as default",
+            command=self.master_app.save_current_lines_to_analytical_library,
+        )
+        default_menu.add_separator()
+        default_menu.add_command(
+            label="Restore included default set",
+            command=self.master_app.restore_default_analytical_line_library,
+        )
+        default_button.configure(menu=default_menu)
+        default_button.pack(side="left", padx=2)
         more_button = ttk.Menubutton(panel, text="More")
         more_menu = tk.Menu(more_button, tearoff=0)
         more_menu.add_command(label="Line summary", command=self.template_info)
@@ -16230,49 +16256,18 @@ class RetroTemplateManager(tk.Toplevel):
         more_button.configure(menu=more_menu)
         more_button.pack(side="left", padx=2)
         ttk.Frame(panel).pack(side="left", fill="x", expand=True)
-        ttk.Button(panel, text="Hide", command=self.hide_template).pack(side="right", padx=2)
-        library_panel = ttk.LabelFrame(self, text="Analytical-line library")
-        library_panel.pack(side="top", fill="x", padx=3, pady=(1, 3))
-        library_button = ttk.Menubutton(library_panel, text="Manage library")
-        library_menu = tk.Menu(library_button, tearoff=0)
-        library_menu.add_command(
-            label="Reload main library",
-            command=self.master_app.reload_analytical_line_library,
-        )
-        library_menu.add_command(
-            label="Add secondary list...",
-            command=self.master_app.add_secondary_analytical_line_list,
-        )
-        library_menu.add_command(
-            label="Replace main library...",
-            command=self.master_app.replace_analytical_line_library,
-        )
-        library_menu.add_command(
-            label="Save current lines as main",
-            command=self.master_app.save_current_lines_to_analytical_library,
-        )
-        library_menu.add_separator()
-        library_menu.add_command(
-            label="Restore included library",
-            command=self.master_app.restore_default_analytical_line_library,
-        )
-        library_button.configure(menu=library_menu)
-        library_button.pack(side="left", padx=2, pady=2)
-        self.library_status_var = tk.StringVar()
-        ttk.Label(
-            library_panel,
-            textvariable=self.library_status_var,
-        ).pack(side="right", padx=6)
         add_context_help_button(
-            library_panel,
+            panel,
             self,
-            "Selected analytical lines",
+            "Analysis lines",
             (
-                "This table is the current analytical workspace. Each row stores the observed peak, "
-                "atomic assignment and Voigt fit. The main analytical-line library is loaded automatically "
-                "for every new analysis."
+                "This is the only line table used by the current analysis. Each row may contain "
+                "a NIST assignment, an observed peak and its fitted area.\n\n"
+                "The saved default line set is only a reusable preset used to initialize or reset "
+                "this table. It never stores measured areas, fitted centers or fitted widths."
             ),
-        ).pack(side="right", padx=3, pady=2)
+        ).pack(side="right", padx=2)
+        ttk.Button(panel, text="Hide", command=self.hide_template).pack(side="right", padx=2)
 
         tree_frame = ttk.Frame(self)
         self.tree = ttk.Treeview(tree_frame, columns=self.display_columns, show="headings", height=18)
@@ -16298,13 +16293,6 @@ class RetroTemplateManager(tk.Toplevel):
             for c in self.display_columns:
                 vals.append(format_template_display_value(getattr(l, c, "")))
             self.tree.insert("", "end", iid=str(i), values=vals)
-        library_lines = len(
-            getattr(self.master_app, "analytical_line_library", []) or []
-        )
-        try:
-            self.library_status_var.set(f"{library_lines} persistent lines")
-        except Exception:
-            pass
         children = set(self.tree.get_children())
         for item in selected:
             if item in children:
@@ -16334,7 +16322,7 @@ class RetroTemplateManager(tk.Toplevel):
         fn = _template_file_dialog(
             self,
             filedialog.asksaveasfilename,
-            title="Save selected-line list",
+            title="Save analysis lines",
             initialdir=remembered_initial_dir(self.master_app.options),
             defaultextension=".csv",
             filetypes=[("CSV", "*.csv"), ("All", "*.*")]
@@ -16358,10 +16346,10 @@ class RetroTemplateManager(tk.Toplevel):
         msg = f"Lines: {len(lines)}\nAssigned lines: {sum(1 for l in lines if l.specie)}"
         if by_species:
             msg += "\n\n" + "\n".join(f"{k}: {v}" for k, v in sorted(by_species.items()))
-        _showinfo(self, "Selected-Line Summary", msg)
+        _showinfo(self, "Analysis-Line Summary", msg)
 
     def clear_template(self):
-        if _askyesno(self, "Analytical-Line List", "This will clear the current analytical-line list. Continue?"):
+        if _askyesno(self, "Analysis Lines", "This will clear the current analysis-line table. Continue?"):
             self.master_app.template_lines.clear()
             self.master_app.clear_element_markers()
             self.master_app.notify_template_changed(redraw=True)
@@ -16377,7 +16365,7 @@ class RetroTemplateManager(tk.Toplevel):
         self.master_app.notify_template_changed(redraw=False)
 
     def close_template(self):
-        if _askyesno(self, "Analytical-Line List", "This will close the current analytical-line list. Continue?"):
+        if _askyesno(self, "Analysis Lines", "This will close the current analysis-line table. Continue?"):
             self.master_app.template_lines.clear()
             self.master_app.notify_template_changed(redraw=True)
             self.on_window_close()
@@ -19913,7 +19901,7 @@ class MainWindow(tk.Tk):
             ) = load_or_create_analytical_line_library()
         except Exception as exc:
             logging.warning(
-                "Could not load the persistent analytical-line library: %s",
+                "Could not load the saved default line set: %s",
                 exc,
                 exc_info=True,
             )
@@ -20411,19 +20399,19 @@ class MainWindow(tk.Tk):
         try:
             lines, path = load_or_create_analytical_line_library()
         except Exception as exc:
-            _showerror(self, "Analytical line library", str(exc))
+            _showerror(self, "Default line set", str(exc))
             return False
         self.analytical_line_library = lines
         self.analytical_line_library_path = path
         self._replace_analysis_lines_from_library(redraw=True)
-        self.status(f"Main analytical line library loaded: {len(lines)} lines")
+        self.status(f"Saved default line set loaded into the current analysis: {len(lines)} lines")
         return True
 
     def add_secondary_analytical_line_list(self):
         filename = _template_file_dialog(
             self,
             filedialog.askopenfilename,
-            title="Add a secondary list to the main analytical library",
+            title="Add lines to the saved default set",
             initialdir=remembered_initial_dir(self.options),
             filetypes=[("Line lists", "*.txt *.csv"), ("All", "*.*")],
         )
@@ -20440,11 +20428,11 @@ class MainWindow(tk.Tk):
                 message = "No new assigned analytical lines were found."
                 if skipped:
                     message += f"\n{skipped} row(s) lacked element, ion stage or wavelength."
-                _showinfo(self, "Analytical line library", message)
+                _showinfo(self, "Default line set", message)
                 return False
             save_analytical_line_library(self.analytical_line_library_path, merged)
         except Exception as exc:
-            _showerror(self, "Analytical line library", str(exc))
+            _showerror(self, "Default line set", str(exc))
             return False
         existing_keys = {
             analytical_line_library_key(line)
@@ -20459,20 +20447,20 @@ class MainWindow(tk.Tk):
         self.analytical_line_library = merged
         self.notify_template_changed(redraw=True)
         message = (
-            f"Added {added} line(s) to the persistent main library "
+            f"Added {added} line(s) to the saved default set "
             f"({len(merged)} total)."
         )
         if skipped:
             message += f" Skipped {skipped} incomplete row(s)."
         self.status(message)
-        _showinfo(self, "Analytical line library", message)
+        _showinfo(self, "Default line set", message)
         return True
 
     def replace_analytical_line_library(self):
         filename = _template_file_dialog(
             self,
             filedialog.askopenfilename,
-            title="Replace the main analytical line library",
+            title="Replace the saved default line set",
             initialdir=remembered_initial_dir(self.options),
             filetypes=[("Line lists", "*.txt *.csv"), ("All", "*.*")],
         )
@@ -20481,8 +20469,8 @@ class MainWindow(tk.Tk):
         remember_working_dir(self.options, filename)
         if not _askyesno(
             self,
-            "Replace analytical line library",
-            "Replace the persistent main library and the current analytical workspace?",
+            "Replace default line set",
+            "Replace the saved default set and reset the current analysis-line table?",
         ):
             return False
         try:
@@ -20497,11 +20485,11 @@ class MainWindow(tk.Tk):
                 clean_lines,
             )
         except Exception as exc:
-            _showerror(self, "Analytical line library", str(exc))
+            _showerror(self, "Default line set", str(exc))
             return False
         self.analytical_line_library = clean_lines
         self._replace_analysis_lines_from_library(redraw=True)
-        message = f"Main analytical line library replaced: {len(clean_lines)} lines."
+        message = f"Saved default line set replaced: {len(clean_lines)} lines."
         if skipped:
             message += f" Skipped {skipped} incomplete row(s)."
         self.status(message)
@@ -20515,16 +20503,16 @@ class MainWindow(tk.Tk):
         if not clean_lines:
             _showinfo(
                 self,
-                "Analytical line library",
-                "The current workspace has no assigned lines to save.",
+                "Default line set",
+                "The current analysis has no assigned lines to save.",
             )
             return False
         if not _askyesno(
             self,
-            "Save main analytical line library",
+            "Save current selection as default",
             (
-                f"Save the {len(clean_lines)} assigned current lines as the persistent "
-                "main library?\n\nFit results and measured intensities are not stored."
+                f"Save the {len(clean_lines)} assigned current lines as the default set?\n\n"
+                "Fit results and measured intensities are not stored."
             ),
         ):
             return False
@@ -20534,10 +20522,10 @@ class MainWindow(tk.Tk):
                 clean_lines,
             )
         except Exception as exc:
-            _showerror(self, "Analytical line library", str(exc))
+            _showerror(self, "Default line set", str(exc))
             return False
         self.analytical_line_library = clean_lines
-        message = f"Persistent main analytical library saved: {len(clean_lines)} lines."
+        message = f"Saved default line set updated: {len(clean_lines)} lines."
         if skipped:
             message += f" Skipped {skipped} incomplete row(s)."
         self.status(message)
@@ -20546,8 +20534,8 @@ class MainWindow(tk.Tk):
     def restore_default_analytical_line_library(self):
         if not _askyesno(
             self,
-            "Restore included analytical lines",
-            "Restore the analytical line library included with pyLIBS?",
+            "Restore included default set",
+            "Restore the default line set included with pyLIBS?",
         ):
             return False
         default_path = app_base_dir() / DEFAULT_ANALYTICAL_LINE_LIBRARY_FILENAME
@@ -20555,17 +20543,17 @@ class MainWindow(tk.Tk):
             loaded = load_template_lines(default_path, RetroTemplateManager.columns)
             clean_lines, _added, _skipped = merge_analytical_line_libraries([], loaded)
             if not clean_lines:
-                raise ValueError("The included analytical line library is unavailable.")
+                raise ValueError("The included default line set is unavailable.")
             save_analytical_line_library(
                 self.analytical_line_library_path,
                 clean_lines,
             )
         except Exception as exc:
-            _showerror(self, "Analytical line library", str(exc))
+            _showerror(self, "Default line set", str(exc))
             return False
         self.analytical_line_library = clean_lines
         self._replace_analysis_lines_from_library(redraw=True)
-        self.status(f"Included analytical line library restored: {len(clean_lines)} lines")
+        self.status(f"Included default line set restored: {len(clean_lines)} lines")
         return True
 
     def _offer_halpha_ne_import(self, filename, error):
@@ -21977,18 +21965,18 @@ def build_retro_menu(self):
     _add_menu_command(self, processing_menu, shortcut_items, "Convert nm to Å", self.convert_nm_to_angstrom, "Ctrl+F4", "<Control-F4>", "")
 
     line_menu = tk.Menu(util_menu, tearoff=0)
-    _add_menu_cascade(self, util_menu, "Analytical Line Lists", line_menu, "show_Template.png")
+    _add_menu_cascade(self, util_menu, "Analysis Lines", line_menu, "show_Template.png")
     _add_menu_command(
         self, line_menu, shortcut_items, "Import Lines for Current Analysis...",
         self.load_template_from_menu, "Ctrl+F5", "<Control-F5>", "load_template.png"
     )
     _add_menu_command(
-        self, line_menu, shortcut_items, "Main Analytical-Line Library...",
+        self, line_menu, shortcut_items, "Open Analysis Lines...",
         self.show_template_manager, "Ctrl+F6", "<Control-F6>", "show_Template.png"
     )
     line_menu.add_separator()
-    _add_menu_command(self, line_menu, shortcut_items, "Selected-Line Summary", self.template_info_from_menu, "Ctrl+F7", "<Control-F7>", "show_Template.png")
-    _add_menu_command(self, line_menu, shortcut_items, "Clear Selected Lines", self.close_template_from_menu, "", "", "clear.png")
+    _add_menu_command(self, line_menu, shortcut_items, "Analysis-Line Summary", self.template_info_from_menu, "Ctrl+F7", "<Control-F7>", "show_Template.png")
+    _add_menu_command(self, line_menu, shortcut_items, "Clear Analysis Lines", self.close_template_from_menu, "", "", "clear.png")
 
     batch_menu = tk.Menu(util_menu, tearoff=0)
     _add_menu_cascade(self, util_menu, "Batch and Statistics", batch_menu, "calculator.png")
@@ -22362,7 +22350,7 @@ def clear_all_spectra(self):
         self,
         "Clear",
         "Clear all spectra and the current fitted-line analysis?\n\n"
-        "The persistent main analytical-line library will be preserved.",
+        "The saved default line set will be preserved.",
     ):
         self.spectra.clear()
         self.independent_window_mode = False
@@ -22373,7 +22361,7 @@ def clear_all_spectra(self):
             self.active_window.refresh()
         self.status(
             f"Clear Graph: spectra and previous line analysis cleared; "
-            f"analytical list restored ({line_count} clean lines); {ne_status}."
+            f"analysis lines reset from the default set ({line_count} clean lines); {ne_status}."
         )
 
 def save_with_labels(self):
@@ -22541,9 +22529,9 @@ def load_template_from_menu(self):
     try:
         self.load_template_file(fn)
         self.redraw()
-        self.status(f"Selected-line list imported: {fn}")
+        self.status(f"Analysis-line list imported: {fn}")
     except Exception as e:
-        _showerror(self, "Import selected-line list", str(e))
+        _showerror(self, "Import analysis lines", str(e))
 
 def template_info_from_menu(self):
     lines = self.template_lines
@@ -22555,7 +22543,7 @@ def template_info_from_menu(self):
     msg = f"Lines: {len(lines)}\nAssigned lines: {sum(1 for line in lines if line.specie)}"
     if by_species:
         msg += "\n\n" + "\n".join(f"{key}: {value}" for key, value in sorted(by_species.items()))
-    _showinfo(self, "Selected-Line Summary", msg)
+    _showinfo(self, "Analysis-Line Summary", msg)
 
 def save_window_positions(self):
     positions = {}
@@ -22977,7 +22965,7 @@ def find_peaks_basic(self, adaptive=False):
         threshold_text = f"classic threshold {classic_threshold:.3g}"
     self.status(
         f"Find Peaks: {added} new lines, {updated} updated; {threshold_text}; "
-        f"selected-line total {len(self.template_lines)}"
+        f"analysis-line total {len(self.template_lines)}"
     )
     return {"added": added, "updated": updated, "thresholds": thresholds, "adaptive": bool(adaptive)}
 

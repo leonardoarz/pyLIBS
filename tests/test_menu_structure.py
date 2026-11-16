@@ -111,7 +111,7 @@ class ProfessionalMenuStructureTests(unittest.TestCase):
             [
                 "Instrument Calibration",
                 "Signal Processing",
-                "Analytical Line Lists",
+                "Analysis Lines",
                 "Batch and Statistics",
             ],
         )

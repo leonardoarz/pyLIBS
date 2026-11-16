@@ -513,7 +513,7 @@ class AnalyticalLineLibraryTests(unittest.TestCase):
         for line in lines:
             counts[(line.specie, line.ion)] = counts.get((line.specie, line.ion), 0) + 1
 
-        self.assertEqual(len(lines), 23)
+        self.assertEqual(len(lines), 33)
         self.assertEqual(
             counts,
             {
@@ -523,7 +523,24 @@ class AnalyticalLineLibraryTests(unittest.TestCase):
                 ("Zn", 1): 2,
                 ("Cu", 1): 4,
                 ("Sn", 1): 4,
+                ("Fe", 1): 6,
+                ("Al", 1): 4,
             },
+        )
+        self.assertEqual(
+            sorted(
+                round(line.wavelen, 8)
+                for line in lines
+                if line.specie == "Fe" and line.ion == 1
+            ),
+            [
+                340.74595,
+                346.58604,
+                347.67017,
+                358.21997,
+                360.88591,
+                361.87676,
+            ],
         )
 
     def test_secondary_lists_are_merged_without_duplicate_lines(self):
@@ -640,7 +657,10 @@ class AnalyticalLineLibraryTests(unittest.TestCase):
         self.assertIsNone(app.session_ne)
         self.assertEqual(app.last_known_ne, 1.0589e16)
         self.assertIsNone(app.last_halpha_result)
-        self.assertIn("analytical list restored (2 clean lines)", app.status_messages[-1])
+        self.assertIn(
+            "analysis lines reset from the default set (2 clean lines)",
+            app.status_messages[-1],
+        )
 
     def test_trace_clear_removes_dynamic_fits_and_saha_state(self):
         library = [TemplateLine(340.36521, "Cd", 1)]

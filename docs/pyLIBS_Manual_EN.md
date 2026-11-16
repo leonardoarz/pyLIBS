@@ -121,9 +121,9 @@ This is the minimum procedure for an unknown sample.
 4. Confirm that the graph shows only the ranges that were actually acquired and that no oblique segments bridge gaps between windows.
 5. Open `Utilities > Instrument Calibration > Instrument Response...`, load all response curves and apply `signal / response` if they are not already stored.
 6. Open `Utilities > Instrument Calibration > Wavelength Calibration...`, load or paste known NIST lines, estimate every window and use `Apply and use for future spectra`.
-7. Open `Utilities > Analytical Line Lists > Main Analytical-Line Library...` and confirm that the main line library is loaded.
+7. Open `Utilities > Analysis Lines > Open Analysis Lines...` and inspect the lines available to the current analysis.
 8. In `Analyse > Spectral Fitting > Automatic Fit...`, use `Find visible peaks`; add any missing measured maxima with `Add peak from graph`.
-9. Open `Analyse > Peak and Line Detection > Trace Lines...`, enter one element at a time, choose `Main analytical list` or `Complete element database`, keep `Only lines with a measured peak` enabled, choose the ionization state and tolerance, then press `OK` and `Assign`.
+9. Open `Analyse > Peak and Line Detection > Trace Lines...`, enter one element at a time, choose `Current analysis lines` or `Complete element database`, keep `Only lines with a measured peak` enabled, choose the ionization state and tolerance, then press `Find lines` and `Assign`.
 10. Repeat Step 9 only for the elements to be analyzed. If an element was added by mistake, select it and press `Delete` or `Remove element (Del)`.
 11. Return to `Auto Fit`, set or verify the ROIs and press `Fit selected peaks (Voigt)`. Check centers, areas, widths, replicate CV and quality.
 12. Load H-alpha separately with `Analyse > Plasma Diagnostics > Electron Density from Hα...`; verify the correct maximum, run the fit and confirm Ne.
@@ -246,11 +246,11 @@ The main window contains the menus, quick-access toolbar, graph and status bar.
 
 - `Open`: opens one spectrum as the main spectrum.
 - `Append`: loads multiple files or windows into the same session.
-- `Clear`: clears the graph and measurement state; the persistent line library is reloaded.
+- `Clear`: clears the graph and measurement state; analysis lines are reset from the saved default set.
 - `Active Spectra`: displays, hides, scales or combines loaded spectra.
 - `Response`: manages radiometric-response curves.
 - `Full Scale`: restores the complete view.
-- `Selected Lines`: opens the working analytical-line list.
+- `Analysis Lines`: opens the single working table of analysis lines.
 - `Trace`: identifies lines for the requested elements.
 - `Ne from H`: calculates Ne from H-alpha.
 - `Auto Fit` and `Manual Fit`: perform Voigt fitting.
@@ -302,7 +302,7 @@ Open `Edit > Spectrum Management > Show Active Spectra`.
 
 ### 6.5 Clear Graph and session memory
 
-`Edit > Spectrum Management > Clear Graph` removes spectra, fits, markers and results from the current measurement. The persistent main line library remains available and is restored. Ne is cleared unless `Keep active Ne after Clear Graph` was explicitly enabled for a homogeneous series.
+`Edit > Spectrum Management > Clear Graph` removes spectra, fits, markers and results from the current measurement. The `Analysis Lines` table is rebuilt from the saved default set. Ne is cleared unless `Keep active Ne after Clear Graph` was explicitly enabled for a homogeneous series.
 
 ## 7. Dark signal, background and instrumental response
 
@@ -349,7 +349,7 @@ Use reliable NIST wavelengths that are present in the sample. You can:
 
 - press `Load NIST line list...` and load a file;
 - paste a series of values into `or paste wavelengths` and press `Add`;
-- use NIST lines already present in the selected-line list.
+- use NIST lines already present in the `Analysis Lines` table.
 
 Values with a decimal point or comma are accepted. A list may include element and ionization-state headers.
 
@@ -430,13 +430,15 @@ A single line determines only a constant offset. If the displacement changes wit
 
 `Utilities > Signal Processing > Convert nm to Å` multiplies the axis by 10. Use it once only, and only when the current axis is actually in nanometers. `Go To Wavelength...` changes only the graph view.
 
-## 9. Main analytical-line library and selected lines
+## 9. Analysis lines
 
-Open `Utilities > Analytical Line Lists > Main Analytical-Line Library...` or press `Selected Lines`.
+Open `Utilities > Analysis Lines > Open Analysis Lines...` or press `Analysis Lines`.
 
-### 9.1 Contents of the main library
+### 9.1 Single working table
 
-The persistent main library contains candidate analytical lines, normally with NIST wavelengths and atomic metadata. The open table is the workspace for the current measurement: in addition to assignments, it may contain observed Voigt centers, widths and areas.
+`Analysis Lines` is the only table used by the current measurement. Each row may contain a NIST wavelength and atomic metadata, the observed maximum and fitted results, including center, widths and area. There is no second competing working list.
+
+The `Default line set` is only a saved preset: it initializes the table at startup and restores it after `Clear Graph`. It never stores measured areas, centers or widths. This separation prevents results from a previous sample from entering the next analysis.
 
 ### 9.2 Main commands
 
@@ -446,21 +448,21 @@ The persistent main library contains candidate analytical lines, normally with N
 - `Delete row`: deletes the selected row.
 - `Saha-Boltzmann`: opens temperature analysis directly.
 - `More > Line summary`: displays a summary.
-- `More > Clear selected lines`: clears the current workspace.
+- `More > Clear selected lines`: clears the current table.
 - `More > Close line list`: closes the active list according to the historical workflow.
 - `More > Delete saved list`: deletes the selected saved list.
 
-### 9.3 Managing the persistent library
+### 9.3 Managing the default set
 
-The `Manage library` menu contains:
+The `Default line set` menu contains:
 
-- `Reload main library`: reloads the main library from disk;
-- `Add secondary list...`: merges an additional list while avoiding duplicates;
-- `Replace main library...`: replaces the main library;
-- `Save current lines as main`: makes the current lines persistent after removing fit results and measurement-specific intensities;
-- `Restore included library`: restores the list distributed with the program.
+- `Load saved default set`: replaces the current table with a clean copy of the saved set;
+- `Add lines to default set...`: merges additional lines into the preset without duplicates and adds them to the current table;
+- `Replace default line set...`: replaces the preset and resets the current table;
+- `Save current selection as default`: saves NIST assignments and atomic metadata from the current rows, removing measurement-specific areas, centers, widths and intensities;
+- `Restore included default set`: restores the set distributed with pyLIBS.
 
-The main library does not automatically authorize all its elements for quantification. The set of analyzed elements is explicitly defined by `Trace Lines` in the current session.
+The presence of a line in the default set does not automatically include its element in quantification. The set of analyzed elements is explicitly defined by `Trace Lines` in the current session.
 
 ## 10. Peak detection and identification
 
@@ -470,18 +472,18 @@ The main library does not automatically authorize all its elements for quantific
 
 ### 10.2 Trace Lines: correct procedure
 
-1. When using the main list, zoom into the interval to be analyzed. A complete-database search instead uses every detector window that was actually acquired.
+1. When using the current lines, zoom into the interval to be analyzed. A complete-database search instead uses every detector window that was actually acquired.
 2. Open `Analyse > Peak and Line Detection > Trace Lines...`.
 3. Enter the symbol in `Trace Species`, for example `Cu`, `Sn` or `Pb`.
-4. Under `Line source`, choose `Main analytical list` to use only the persistent curated list in the visible interval, or `Complete element database` to query every transition available for that element across all actually acquired detector windows.
+4. Under `Line source`, choose `Current analysis lines` to use only lines already present in the current table and visible interval, or `Complete element database` to query every transition available for that element across all actually acquired detector windows.
 5. Select `I`, `II`, `Both` or `All`.
 6. Keep `Only lines with a measured peak` enabled: the program automatically searches for a real measured local maximum near each transition.
 7. Set `Tolerance` in the displayed unit.
-8. Press `OK` and inspect the table.
+8. Press `Find lines` and inspect the table.
 9. Press `Assign` only when the lines are consistent.
 10. Repeat for every element that is actually required.
 
-`Only lines with a measured peak` filters both sources. Theoretical rows preloaded from the analytical list do not count as observations: every transition must have a measured maximum within `Tolerance`. With the complete database, the comparison may also propose an alternative identity for an already assigned peak. `Assign` automatically adds the corresponding measured maxima to the analytical-line list, even when the element was absent from the original list, making them available for fitting and integration. Disable the filter only to inspect every theoretical line from the chosen source.
+`Only lines with a measured peak` filters both sources. Theoretical rows in the table do not count as observations: every transition must have a measured maximum within `Tolerance`. With the complete database, the comparison may also propose an alternative identity for an already assigned peak. `Assign` automatically adds the corresponding measured maxima to the `Analysis Lines` table, even when the element was absent from the default set, making them available for fitting and integration. Disable the filter only to inspect every theoretical line from the chosen source.
 
 ### 10.3 Removing an incorrect element
 
@@ -969,10 +971,10 @@ For a completely unknown sample, use the CF-LIBS workflow without OPC or Standar
 | Signal Processing > Smooth Spectrum | Ctrl+F3 | smooths the displayed spectrum |
 | Signal Processing > Convert nm to Å | Ctrl+F4 | converts nanometers to angstroms |
 | Batch and Statistics > Batch Operations... | - | performs batch processing, averaging, joining and MultiFit |
-| Analytical Line Lists > Import Lines for Current Analysis... | Ctrl+F5 | imports the current list |
-| Analytical Line Lists > Main Analytical-Line Library... | Ctrl+F6 | manages the main library and working lines |
-| Analytical Line Lists > Selected-Line Summary | Ctrl+F7 | summarizes selected lines |
-| Analytical Line Lists > Clear Selected Lines | - | clears current lines |
+| Analysis Lines > Import Lines for Current Analysis... | Ctrl+F5 | imports lines into the current table |
+| Analysis Lines > Open Analysis Lines... | Ctrl+F6 | opens the single working line table |
+| Analysis Lines > Analysis-Line Summary | Ctrl+F7 | summarizes analysis lines |
+| Analysis Lines > Clear Analysis Lines | - | clears current lines |
 | Batch and Statistics > Statistics | Shift+Ctrl+F4 | displays X/Y statistics |
 | Go To Wavelength... | Ctrl+F9 | centers a wavelength |
 

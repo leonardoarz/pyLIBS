@@ -65,7 +65,7 @@ Nel programma possono comparire tre valori distinti:
 - `fitwavelen`: centro osservato ricavato dal fit Voigt;
 - asse spettrale: lunghezza d'onda letta dal file, eventualmente corretta dalla calibrazione.
 
-La libreria analitica principale deve contenere preferibilmente le lunghezze d'onda NIST. Il fit cerca il massimo osservato nell'intorno e determina il suo centro. Non sostituire sistematicamente il valore NIST con il centro osservato.
+Le righe di analisi devono contenere preferibilmente le lunghezze d'onda NIST. Il fit cerca il massimo osservato nell'intorno e determina il suo centro. Non sostituire sistematicamente il valore NIST con il centro osservato.
 
 ### 2.2 Area, altezza e larghezza
 
@@ -121,9 +121,9 @@ Questa è la procedura minima per un campione incognito.
 4. Controllare che il grafico mostri solo gli intervalli realmente acquisiti e che non siano presenti segmenti obliqui nei vuoti tra finestre.
 5. Aprire `Utilities > Instrument Calibration > Instrument Response...`, caricare tutte le curve di risposta e applicare `signal / response` se non sono già memorizzate.
 6. Aprire `Utilities > Instrument Calibration > Wavelength Calibration...`, caricare o incollare righe NIST note, stimare ogni finestra e usare `Apply and use for future spectra`.
-7. Aprire `Utilities > Analytical Line Lists > Main Analytical-Line Library...` e verificare che la libreria analitica principale sia caricata.
+7. Aprire `Utilities > Analysis Lines > Open Analysis Lines...` e verificare le righe disponibili per l'analisi corrente.
 8. In `Analyse > Spectral Fitting > Automatic Fit...`, usare `Find visible peaks`; aggiungere manualmente eventuali massimi mancanti con `Add peak from graph`.
-9. Aprire `Analyse > Peak and Line Detection > Trace Lines...`, inserire un elemento alla volta, scegliere `Main analytical list` oppure `Complete element database`, mantenere `Only lines with a measured peak`, scegliere stato ionico e tolleranza, quindi `OK` e `Assign`.
+9. Aprire `Analyse > Peak and Line Detection > Trace Lines...`, inserire un elemento alla volta, scegliere `Current analysis lines` oppure `Complete element database`, mantenere `Only lines with a measured peak`, scegliere stato ionico e tolleranza, quindi `Find lines` e `Assign`.
 10. Ripetere il punto 9 esclusivamente per gli elementi che si vogliono analizzare. Se un elemento è stato inserito per errore, selezionarlo e premere `Canc` oppure `Remove element (Del)`.
 11. Tornare ad `Auto Fit`, impostare o verificare le ROI e premere `Fit selected peaks (Voigt)`. Controllare centri, area, larghezze, CV delle repliche e qualità.
 12. Caricare separatamente H-alpha con `Analyse > Plasma Diagnostics > Electron Density from Hα...`; verificare il massimo corretto, eseguire il fit e confermare Ne.
@@ -246,11 +246,11 @@ La finestra principale contiene menu, barra rapida, grafico e barra di stato.
 
 - `Open`: apre un singolo spettro come spettro principale.
 - `Append`: carica più file o finestre nella stessa sessione.
-- `Clear`: pulisce il grafico e lo stato della misura; la libreria analitica principale viene ricaricata.
+- `Clear`: pulisce il grafico e lo stato della misura; le righe di analisi vengono ripristinate dal set predefinito salvato.
 - `Active Spectra`: mostra, nasconde, scala o combina gli spettri caricati.
 - `Response`: gestisce le curve radiometriche.
 - `Full Scale`: ripristina l'intera vista.
-- `Selected Lines`: apre l'elenco operativo delle righe analitiche.
+- `Analysis Lines`: apre l'unica tabella operativa delle righe di analisi.
 - `Trace`: identifica le righe degli elementi richiesti.
 - `Ne from H`: calcola Ne da H-alpha.
 - `Auto Fit` e `Manual Fit`: eseguono il fit Voigt.
@@ -302,7 +302,7 @@ Aprire `Edit > Spectrum Management > Show Active Spectra`.
 
 ### 6.5 Clear Graph e memoria della sessione
 
-`Edit > Spectrum Management > Clear Graph` rimuove spettri, fit, marcatori e risultati della misura corrente. La libreria analitica principale resta disponibile e viene ripristinata. Ne viene cancellata, salvo che `Keep active Ne after Clear Graph` sia stato esplicitamente attivato per una serie omogenea.
+`Edit > Spectrum Management > Clear Graph` rimuove spettri, fit, marcatori e risultati della misura corrente. La tabella `Analysis Lines` viene ricreata dal set predefinito salvato. Ne viene cancellata, salvo che `Keep active Ne after Clear Graph` sia stato esplicitamente attivato per una serie omogenea.
 
 ## 7. Dark, fondo e funzione strumentale
 
@@ -430,13 +430,15 @@ Una sola riga determina esclusivamente un offset costante. Se lo scostamento cam
 
 `Utilities > Signal Processing > Convert nm to Å` moltiplica l'asse per 10. Usarlo una sola volta e solo quando l'asse corrente è realmente in nanometri. `Go To Wavelength...` cambia soltanto la vista del grafico.
 
-## 9. Libreria analitica e righe selezionate
+## 9. Righe di analisi
 
-Aprire `Utilities > Analytical Line Lists > Main Analytical-Line Library...` o il pulsante `Selected Lines`.
+Aprire `Utilities > Analysis Lines > Open Analysis Lines...` o il pulsante `Analysis Lines`.
 
-### 9.1 Contenuto della libreria analitica principale
+### 9.1 Unica tabella operativa
 
-La libreria analitica principale contiene righe analitiche candidate, normalmente con lunghezze d'onda NIST e metadati atomici. La tabella aperta è lo spazio di lavoro della misura corrente: oltre all'assegnazione può contenere centro, larghezze e area Voigt osservati.
+`Analysis Lines` è l'unica tabella usata dalla misura corrente. Ogni riga può contenere la lunghezza d'onda NIST e i metadati atomici, il massimo osservato e i risultati del fit, inclusi centro, larghezze e area. Non esiste una seconda lista operativa concorrente.
+
+Il `Default line set` è soltanto un preset salvato: inizializza la tabella all'avvio e la ripristina dopo `Clear Graph`. Non conserva mai aree, centri o larghezze misurati. Questa separazione evita che risultati appartenenti a un campione precedente rientrino nell'analisi successiva.
 
 ### 9.2 Comandi principali
 
@@ -446,21 +448,21 @@ La libreria analitica principale contiene righe analitiche candidate, normalment
 - `Delete row`: elimina la riga selezionata.
 - `Saha-Boltzmann`: apre direttamente l'analisi della temperatura.
 - `More > Line summary`: mostra un riepilogo.
-- `More > Clear selected lines`: svuota lo spazio di lavoro corrente.
+- `More > Clear selected lines`: svuota la tabella corrente.
 - `More > Close line list`: chiude la lista attiva secondo il flusso storico.
 - `More > Delete saved list`: elimina la lista salvata selezionata.
 
-### 9.3 Gestione della libreria persistente
+### 9.3 Gestione del set predefinito
 
-Nel menu `Manage library`:
+Nel menu `Default line set`:
 
-- `Reload main library`: ricarica la libreria analitica principale dal disco;
-- `Add secondary list...`: fonde una lista aggiuntiva evitando duplicati;
-- `Replace main library...`: sostituisce la libreria analitica principale;
-- `Save current lines as main`: rende persistenti le righe correnti, rimuovendo risultati di fit e intensità specifici della misura;
-- `Restore included library`: ripristina la lista distribuita col programma.
+- `Load saved default set`: sostituisce la tabella corrente con una copia pulita del set salvato;
+- `Add lines to default set...`: fonde righe aggiuntive nel preset evitando duplicati e le aggiunge alla tabella corrente;
+- `Replace default line set...`: sostituisce il preset e ripristina la tabella corrente;
+- `Save current selection as default`: salva assegnazioni NIST e metadati delle righe correnti, eliminando aree, centri, larghezze e intensità specifici della misura;
+- `Restore included default set`: ripristina il set distribuito con pyLIBS.
 
-La presenza di una riga nella libreria analitica principale non autorizza automaticamente il relativo elemento alla quantificazione. L'insieme degli elementi analizzati è definito esplicitamente da `Trace Lines` nella sessione corrente.
+La presenza di una riga nel set predefinito non include automaticamente il relativo elemento nella quantificazione. L'insieme degli elementi analizzati è definito esplicitamente da `Trace Lines` nella sessione corrente.
 
 ## 10. Ricerca dei picchi e identificazione
 
@@ -470,18 +472,18 @@ La presenza di una riga nella libreria analitica principale non autorizza automa
 
 ### 10.2 Trace Lines: procedura corretta
 
-1. Se si usa la libreria analitica principale, ingrandire il grafico sull'intervallo da analizzare. La ricerca nel database completo usa invece tutte le finestre realmente acquisite.
+1. Se si usano le righe correnti, ingrandire il grafico sull'intervallo da analizzare. La ricerca nel database completo usa invece tutte le finestre realmente acquisite.
 2. Aprire `Analyse > Peak and Line Detection > Trace Lines...`.
 3. Inserire il simbolo in `Trace Species`, per esempio `Cu`, `Sn` o `Pb`.
-4. In `Line source`, scegliere `Main analytical list` per usare esclusivamente le righe della libreria analitica principale nell'intervallo visibile, oppure `Complete element database` per interrogare tutte le transizioni disponibili per quell'elemento in tutte le finestre realmente acquisite.
+4. In `Line source`, scegliere `Current analysis lines` per usare esclusivamente le righe già presenti nella tabella corrente e nell'intervallo visibile, oppure `Complete element database` per interrogare tutte le transizioni disponibili per quell'elemento in tutte le finestre realmente acquisite.
 5. Scegliere `I`, `II`, `Both` oppure `All`.
 6. Lasciare attivo `Only lines with a measured peak`: il programma cerca automaticamente un vero massimo locale misurato vicino a ogni transizione.
 7. Impostare `Tolerance` nell'unità mostrata.
-8. Premere `OK` e controllare la tabella.
+8. Premere `Find lines` e controllare la tabella.
 9. Premere `Assign` soltanto se le righe sono coerenti.
 10. Ripetere per ogni elemento effettivamente richiesto.
 
-Il filtro `Only lines with a measured peak` si applica a entrambe le sorgenti. Le righe teoriche precaricate dalla libreria analitica principale non contano come osservazioni: per ogni transizione deve esistere un massimo misurato entro `Tolerance`. Con il database completo il confronto può proporre anche un'identificazione alternativa per un picco già assegnato. `Assign` aggiunge automaticamente i massimi corrispondenti all'elenco delle righe analitiche, anche quando l'elemento non era presente nella libreria analitica principale, rendendoli disponibili al fit e all'integrazione. Disattivare il filtro soltanto per consultare tutte le righe teoriche della sorgente.
+Il filtro `Only lines with a measured peak` si applica a entrambe le sorgenti. Le righe teoriche presenti nella tabella non contano come osservazioni: per ogni transizione deve esistere un massimo misurato entro `Tolerance`. Con il database completo il confronto può proporre anche un'identificazione alternativa per un picco già assegnato. `Assign` aggiunge automaticamente i massimi corrispondenti alla tabella `Analysis Lines`, anche quando l'elemento non era presente nel set predefinito, rendendoli disponibili al fit e all'integrazione. Disattivare il filtro soltanto per consultare tutte le righe teoriche della sorgente.
 
 ### 10.3 Rimuovere un elemento errato
 
@@ -969,10 +971,10 @@ Per un campione completamente incognito usare il flusso CF-LIBS senza OPC o Stan
 | Signal Processing > Smooth Spectrum | Ctrl+F3 | leviga lo spettro visualizzato |
 | Signal Processing > Convert nm to Å | Ctrl+F4 | converte i nanometri in ångström |
 | Batch and Statistics > Batch Operations... | - | esegue elaborazioni batch, medie, unioni e MultiFit |
-| Analytical Line Lists > Import Lines for Current Analysis... | Ctrl+F5 | importa la lista corrente |
-| Analytical Line Lists > Main Analytical-Line Library... | Ctrl+F6 | gestisce la libreria analitica principale e le righe operative |
-| Analytical Line Lists > Selected-Line Summary | Ctrl+F7 | riepiloga le righe selezionate |
-| Analytical Line Lists > Clear Selected Lines | - | svuota le righe correnti |
+| Analysis Lines > Import Lines for Current Analysis... | Ctrl+F5 | importa righe nella tabella corrente |
+| Analysis Lines > Open Analysis Lines... | Ctrl+F6 | apre l'unica tabella operativa delle righe |
+| Analysis Lines > Analysis-Line Summary | Ctrl+F7 | riepiloga le righe di analisi |
+| Analysis Lines > Clear Analysis Lines | - | svuota le righe correnti |
 | Batch and Statistics > Statistics | Shift+Ctrl+F4 | mostra le statistiche X/Y |
 | Go To Wavelength... | Ctrl+F9 | centra una lunghezza d'onda |
 
